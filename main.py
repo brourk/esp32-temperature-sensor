@@ -40,8 +40,27 @@ last_read_time = None  # ticks_ms() of last successful read
 # Uptime reference
 start_time = time.ticks_ms()
 
-# Location (can be set via /set_location)
+# Location (persisted to location.txt)
 location = "Unknown"
+
+def load_location():
+    global location
+    try:
+        with open('location.txt', 'r') as f:
+            loc = f.read().strip()
+            if loc:
+                location = loc
+    except:
+        pass
+
+def save_location(new_loc):
+    global location
+    location = new_loc
+    try:
+        with open('location.txt', 'w') as f:
+            f.write(new_loc)
+    except Exception as e:
+        print(f'Failed to save location: {e}')
 
 # Device password = last 8 chars of MAC address (lowercase) - set after Ethernet connects
 device_password = None
@@ -58,6 +77,8 @@ try:
         print('DS18B20: no sensors found at startup (will retry)')
 except Exception as e:
     print(f'DS18B20 scan error: {e}')
+
+load_location()
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +345,8 @@ async def http_server(lan):
                             new_loc = body.split('loc=', 1)[1].split('&', 1)[0]
 
                 if new_loc:
-                    location = new_loc.replace('+', ' ').replace('%20', ' ')
+                    new_loc = new_loc.replace('+', ' ').replace('%20', ' ')
+                    save_location(new_loc)
                     print(f'Location updated to: {location}')
                     response = (
                         'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n'
