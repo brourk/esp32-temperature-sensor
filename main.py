@@ -227,6 +227,7 @@ async def temp_reader():
 # ---------------------------------------------------------------------------
 async def http_server(lan):
     """Serve the web UI, /api/temp, /health, /help, /set_location, /update on port 80."""
+    global location
     try:
         srv = socket.socket()
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -323,12 +324,30 @@ async def http_server(lan):
                             new_loc = body.split('loc=', 1)[1].split('&', 1)[0]
 
                 if new_loc:
-                    global location
                     location = new_loc.replace('+', ' ').replace('%20', ' ')
                     print(f'Location updated to: {location}')
-                    response = 'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nLocation set to: ' + location
+                    response = (
+                        'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n'
+                        '<html><body style="font-family:Arial">'
+                        f'<h2>Location updated to: {location}</h2>'
+                        '<a href="/">Back to dashboard</a>'
+                        '</body></html>'
+                    )
                 else:
-                    response = 'HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nMissing loc parameter'
+                    # Show form
+                    response = (
+                        'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n'
+                        '<html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
+                        '<style>body{font-family:Arial,sans-serif;margin:40px}input,button{padding:10px;font-size:1.1em}</style>'
+                        '</head><body>'
+                        '<h2>Set Device Location</h2>'
+                        '<form method="POST" action="/set_location">'
+                        '<input type="text" name="loc" placeholder="e.g. Server Room, Floor 2" style="width:300px"> '
+                        '<button type="submit">Save Location</button>'
+                        '</form>'
+                        '<p><a href="/">Back to dashboard</a></p>'
+                        '</body></html>'
+                    )
 
             elif path == '/update':
                 # Password check
