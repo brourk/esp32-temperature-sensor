@@ -27,7 +27,8 @@ config = {
     'password': None,      # None = first run, open access
     'location': 'Unknown',
     'temp_offset_c': 0.0,
-    'ntp_server': 'pool.ntp.org'
+    'ntp_server': 'pool.ntp.org',
+    'mdns_hostname': None   # None/empty = use temp-sensor-XXXX (MAC derived)
 }
 
 def load_config():
@@ -86,6 +87,25 @@ def sync_time():
 # ---------------------------------------------------------------------------
 # Password helpers
 # ---------------------------------------------------------------------------
+
+def get_effective_hostname():
+    """Return the hostname that will be used (custom or MAC-derived)."""
+    try:
+        custom = config.get('mdns_hostname')
+        if custom:
+            return custom
+    except:
+        pass
+    # Compute default from MAC (same logic as boot.py)
+    try:
+        lan = network.LAN(mdc=Pin(16), mdio=Pin(17), power=None,
+                          phy_type=network.PHY_RTL8201, phy_addr=0)
+        mac = lan.config('mac')
+        mac_tail = ubinascii.hexlify(mac[-4:]).decode()
+        full_mac = ubinascii.hexlify(mac).decode(':')
+        return f'temp-sensor-{mac_tail}', full_mac
+    except:
+        return 'temp-sensor', 'unknown'
 def password_required():
     return config.get('password') is not None
 
@@ -154,6 +174,7 @@ WEB_PAGE = (
     "<div class='value' id='fah'>--.-</div><div class='unit'>&deg;F</div></div>"
     "</div>"
     "<div class='status' id='st'>Loading…</div>"
+    "<p style=\"font-size:0.8em;color:#8899aa;margin-top:1em\">API available at <a href=\"/api/temp\">/api/temp</a> (returns JSON with celsius, fahrenheit, location, etc.)</p>"
     "<p><a href='/settings'>Settings</a></p>"
     "<script>"
     "function refresh(){fetch('/api/temp').then(r=>r.json()).then(d=>{"
@@ -213,6 +234,21 @@ def get_settings_page(msg="", pw=""):
         <button type="submit">Save NTP Server</button>
     </form>
 
+    <h3>mDNS Hostname (custom)</h3>
+    <form method="POST" action="/settings">
+        <input type="hidden" name="action" value="hostname">
+        <input type="hidden" name="pw" value="{pw}">
+        <input type="text" name="mdns_hostname" value="{config.get('mdns_hostname','')}" size="30" placeholder="leave empty for default"><br>
+        <button type="submit">Save mDNS Hostname</button>
+    </form>
+
+    <p style="font-size:0.85em;color:#8899aa;margin-top:0.5em">
+      <strong>Default name</strong> (when field is empty): <code>temp-sensor-XXXX.local</code> 
+      (XXXX = last 4 hex bytes of MAC)<br>
+      <strong>Full MAC</strong> is shown in the device serial console on boot.<br>
+      <strong>Reboot required</strong> after changing the mDNS hostname.
+    </p>
+
     <h3>Upload new main.py</h3>
     <form method="POST" action="/upload" enctype="multipart/form-data">
         <input type="hidden" name="pw" value="{pw}">
@@ -234,23 +270,17 @@ def get_settings_page(msg="", pw=""):
 # Ethernet + NTP
 # ---------------------------------------------------------------------------
 async def connect_ethernet():
+    """Wait for the Ethernet interface (already initialized in boot.py) and optionally set/refresh hostname.
+    We avoid re-creating the LAN object here because boot.py already did the initial activation + hostname.
+    """
     try:
+        # Re-use the interface that boot.py created and activated
         lan = network.LAN(mdc=Pin(16), mdio=Pin(17), power=None,
                           phy_type=network.PHY_RTL8201, phy_addr=0)
-        lan.active(True)
-        print('Ethernet LAN activated')
 
-        try:
-            mac = lan.config('mac')
-            mac_tail = ubinascii.hexlify(mac[-4:]).decode()
-            hostname = f'temp-sensor-{mac_tail}'
-        except:
-            hostname = 'temp-sensor'
-        try:
-            network.hostname(hostname)
-        except:
-            pass
-        print(f'Hostname: {hostname}')
+        # Do not call lan.active(True) again if already up from boot.py
+        # Only set hostname if we want to override (but boot.py should have done it)
+        print('Ethernet interface obtained from boot.py setup')
 
         deadline = time.ticks_ms() + 15000
         while not lan.isconnected():
@@ -409,6 +439,14 @@ async def http_server(lan):
                             config['location'] = loc
                             save_config()
                             msg = 'Location saved.'
+                    elif action == 'hostname':
+                            new_host = form.get('mdns_hostname', '').strip()
+                            if new_host:
+                                config['mdns_hostname'] = new_host
+                            else:
+                                config['mdns_hostname'] = None
+                            save_config()
+                            msg = 'mDNS hostname saved. Reboot required for change to take effect.'
                         elif action == 'offset':
                             try:
                                 config['temp_offset_c'] = float(form.get('offset', 0))
