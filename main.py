@@ -439,7 +439,7 @@ async def http_server(lan):
                             config['location'] = loc
                             save_config()
                             msg = 'Location saved.'
-                    elif action == 'hostname':
+                        elif action == 'hostname':
                             new_host = form.get('mdns_hostname', '').strip()
                             if new_host:
                                 config['mdns_hostname'] = new_host
